@@ -1,11 +1,15 @@
+from models import User, Message, Chat
 
 
-# print("hello worlkd")
 from fastapi import FastAPI
-import uvicorn
 
-# while True:
-#     pass
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+engine = create_engine(f"postgresql+psycopg2://myuser:mypassword@localhost/mydatabase", echo=True)
+Session = sessionmaker(engine)
+session = Session()
+
 app = FastAPI()
 
 @app.get("/test")
@@ -14,6 +18,3 @@ async def main():
 
 
 
-
-# if __name__ == "__main__":
-#     uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)
