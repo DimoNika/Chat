@@ -1,6 +1,19 @@
 
 
 services:
+  backend:
+    build:
+      context: backend
+      dockerfile: Dockerfile
+    # container_name: fastapi_app
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/app
+    networks:
+      - net
+    # environment:
+    #   - ENV=production
   nginx:
     image: nginx
     container_name: nginx
@@ -8,28 +21,31 @@ services:
       - "80:80"
       # - "443:443"   # enable if SSL
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./app:/usr/share/nginx/html:ro   # if serving static files
+      # - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./frontend/dist:/frontend:ro   # if serving static files
     depends_on:
-      - app
+      - backend
     networks:
       - net
       
-db:
-  image: postgres
-  container_name: postgres_db
-  restart: always
-  ports:
-    - "5432:5432"
-  environment:
-    POSTGRES_USER: myuser
-    POSTGRES_PASSWORD: mypassword
-    POSTGRES_DB: mydatabase
-  volumes:
-    - db_data:/var/lib/postgresql/data
-  networks:
-    - net
+  db:
+    image: postgres
+    container_name: postgres_db
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: mydatabase
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    depends_on:
+      - backend
+    networks:
+      - net
 
 volumes:
   db_data:
