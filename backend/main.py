@@ -1,6 +1,6 @@
 from models import User, Message, Chat
 
-from src.token_managment import create_refresh_token, create_access_token, auth
+from src.token_managment import create_refresh_token, create_access_token, auth, decode
 from fastapi import FastAPI
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
@@ -23,7 +23,7 @@ app = FastAPI()
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     # Игнорируем авторизацию для публичных роутов
-    if request.url.path in ["/login", "/signup", "/test"]:
+    if request.url.path in ["/login", "/signup", "/test" , "/refresh"]:
         return await call_next(request)
 
     auth_header = request.headers.get("Authorization")
@@ -72,7 +72,7 @@ async def login(request: Request):
             )
             return response
         
-    return JSONResponse(status_code=401, content={"detail": "Invalid credentials"})
+    return JSONResponse(status_code=404, content={"detail": "Invalid credentials"})
     
 
     
@@ -135,4 +135,20 @@ async def signup(request: Request):
 
 @app.get("/auth")
 async def auth_endpoint():
+    """
+    User enters here if only he has valid access_token
+    """
     return JSONResponse(content={"detail": "User authenticated", "auth": True})
+
+@app.get("/refresh")
+async def refresh_endpoint(request: Request):
+    """
+    Refreshes access_token if refresh_token valid
+    """
+
+    print(request.cookies)
+    if auth(refresh_token := request.cookies["refresh_token"]):
+        refresh_token_data = decode(refresh_token)
+        new_access_token = create_access_token({"username": refresh_token_data["username"]})
+
+    return JSONResponse(content={"detail": "Access token refreshed", "access_token": new_access_token})

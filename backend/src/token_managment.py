@@ -48,16 +48,10 @@ def auth(token):
         jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options=OPTIONS)
         # jws.verify(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWSError as e:
-        print(e, flush=True)
         return False
     except ExpiredSignatureError as e:
-        print(e, flush=True)
-
-
         return False
     except Exception as e:
-        print(e, flush=True)
-
         return False
         raise Exception(f"Something happened in verifying JWT: {str(e)}")
     else:
