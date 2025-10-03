@@ -49,8 +49,35 @@ async def main():
 
 @app.post("/login")
 async def login(request: Request):
+    body = await request.json()
+    print(body)
+    user_creds = UserLogin(**body)  # Serialize manulally
+    # print(user)
 
-    return await request.body()
+    if user := session.query(User).where(User.user_tag==user_creds.username.lower()).first():
+        if pbkdf2_sha256.verify(user_creds.password, user.password):
+
+            refresh_token = create_refresh_token({"username": user.username})
+            access_token = create_access_token({"username": user.username})
+
+            #  Set-Cookie in response
+            response = JSONResponse(content={"access_token": access_token, "detail": "User logged in successfuly"})
+            response.set_cookie(
+                key="refresh_token",
+                value=refresh_token,
+                httponly=True,
+                max_age=4_320_000,
+                samesite="Strict",
+                secure=True
+            )
+            return response
+        
+    return JSONResponse(status_code=401, content={"detail": "Invalid credentials"})
+    
+
+    
+    
+    
 
 
 @app.post("/signup")
@@ -58,19 +85,35 @@ async def signup(request: Request):
 
     try:
         body = await request.json()
+        print(body)
         user = UserSignup(**body)  # Serialize manulally
-        if user.password1 != user.password2:
-            return JSONResponse(status_code=400, content={"detail": "Passwords do not match"})
+        # print(user)
+        # print("hello world")
     
     except ValidationError as validation_error:
         validation_error : ValidationError
-        return JSONResponse(status_code=422, content={"detail": "Invalid credentials"})
-    
-    if session.query(User).where(User.username==user.username).first():
+        # print(validation_error)
+        # print(str(validation_error) + "ALO")
+        # print(validation_error.title)
+        
+        for err in validation_error.errors():
+            if err['loc'][0] == "username":
+                return JSONResponse(status_code=422, content={"detail": "Wrong username."})
+            elif err['loc'][0] == "password1":
+                print(err)
+                print(err["ctx"]["error"])
+                
+                return JSONResponse(status_code=422, content={"detail": str(err["ctx"]["error"])})
+                # return JSONResponse(status_code=422, content={"detail": "Password pattern missmatch."})
+            
+    if user.password1 != user.password2:    
+        return JSONResponse(status_code=400, content={"detail": "Passwords do not match"})
+
+    if session.query(User).where(User.user_tag == user.username.lower()).first():
         return JSONResponse(status_code=409, content={"detail": "Username already taken"})
     else:
         # tokens...
-        new_user = User(user.username, pbkdf2_sha256.hash(user.password1))
+        new_user = User(user.username, user.username.lower(), pbkdf2_sha256.hash(user.password1))
         session.add(new_user)
         session.commit()
 
@@ -92,4 +135,4 @@ async def signup(request: Request):
 
 @app.get("/auth")
 async def auth_endpoint():
-    return True
+    return JSONResponse(content={"detail": "User authenticated", "auth": True})

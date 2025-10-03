@@ -22,6 +22,7 @@ class User(Base):
     __tablename__ = "user"
     id = Column(Integer, primary_key=True)
     username = Column(String(64), unique=True, nullable=False)
+    user_tag = Column(String(64), unique=True, nullable=False)
     created_at = Column(DateTime, default=func.now())
     password = Column(String(256), nullable=False)  # hashed password
 
@@ -32,8 +33,9 @@ class User(Base):
     )
 
     
-    def __init__(self, username, password):
+    def __init__(self, username: str, user_tag: str, password: str):
         self.username = username
+        self.user_tag = user_tag.lower()
         self.password = password
 
 
