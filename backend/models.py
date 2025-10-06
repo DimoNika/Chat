@@ -54,11 +54,7 @@ class Chat(Base):
         secondary=user_chat_association,
         back_populates="chats"
     )
-    # is_group = Column(Boolean, nullable=False, default=False)
-    # title = Column(String(128), nullable=True)
-    
-    # participants = relationship("User", back_populates="chat")
-    
+
 
 class Message(Base):
     __tablename__ = "message"
