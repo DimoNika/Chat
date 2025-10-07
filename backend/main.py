@@ -224,21 +224,21 @@ async def chats_list(request: Request):
             last_message = (
                 session.query(Message)
                 .filter(Message.chat_id == chat.id)
+                .filter(Message.is_deleted == False)
                 .order_by(Message.sent_at.desc())
                 .first()
             )
             
-            print(last_message.sent_at, "flex")
-            print(last_message.text, "flex")
+            
             messages_data = []
-            for msg in session.query(Message).filter(Message.chat_id == chat.id).order_by(Message.sent_at.asc()).all():
+            for msg in session.query(Message).filter(Message.chat_id == chat.id).filter(Message.is_deleted == False).order_by(Message.sent_at.asc()).all():
                 messages_data.append({
                     "id": msg.id,
                     "sender_id": msg.sender_id,
                     "text": msg.text,
                     "time": str(msg.sent_at),
                     "isDeleted": msg.is_deleted,
-                    "editedAt": str(msg.edited_at) if msg.edited_at else None,
+                    "editedAt": str(msg.edited_at) if msg.edited_at else "",
 
                     "fromMe": True if user.id == msg.sender_id else False
                 })
@@ -248,7 +248,7 @@ async def chats_list(request: Request):
                 "title": other_user_username,
                 "lastMessage": {
                     "id": last_message.id,
-                    "from_me": True if last_message.sender_id == user.id else False,
+                    "fromMe": True if last_message.sender_id == user.id else False,
                     "text": last_message.text,
                     "time": str(last_message.sent_at)
                 },
@@ -262,7 +262,7 @@ async def chats_list(request: Request):
 
         response_data.sort(key=by_time, reverse=True)
         # return "hello"
-        return JSONResponse(content={"chats_list": response_data})
+        return JSONResponse(content={"chats_list": response_data, "your_username": user.username})
 
 # type Message = {
 #   id: string;
@@ -392,6 +392,29 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "id": message_entity.id,
                                 "text": message_entity.text,
                                 "edited_at": str(message_entity.edited_at),
+                            }
+
+                            if other_user_websocket:= connection_manager.active_connections.get(other_user.id):
+                                await connection_manager.send_personal_message(data, other_user_websocket)
+
+                            await websocket.send_json(data)
+                        
+                        elif message["type"] == "delete_message":
+                            message_entity: Message = session.query(Message).filter_by(id=message["messageID"]).first()
+
+                            # if message owner is this user
+                            if message_entity.sender_id == this_user.id:
+                                
+                                
+                                message_entity.is_deleted = True
+                                session.commit()
+                                session.refresh(message_entity)
+                            else:
+                                print("User does not own this message")
+                            
+                            data = {
+                                "type": "delete_message",
+                                "id": message_entity.id,
                             }
 
                             if other_user_websocket:= connection_manager.active_connections.get(other_user.id):

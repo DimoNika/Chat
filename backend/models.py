@@ -79,7 +79,7 @@ class Message(Base):
             "sent_at":      str(self.sent_at),
             "text":         self.text,
             "is_deleted":   self.is_deleted,
-            "edited_at":    str(self.edited_at),
+            "edited_at":    str(self.edited_at) if self.edited_at else "",
         }
 
 
