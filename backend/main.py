@@ -15,6 +15,8 @@ from passlib.hash import pbkdf2_sha256
 
 from src.db_requests import get_chat_between_users
 
+from datetime import datetime
+
 engine = create_engine(f"postgresql+psycopg2://myuser:mypassword@db/mydatabase", echo=True)
 # Session = sessionmaker(engine)
 # session = Session()
@@ -231,14 +233,14 @@ async def chats_list(request: Request):
             messages_data = []
             for msg in session.query(Message).filter(Message.chat_id == chat.id).order_by(Message.sent_at.asc()).all():
                 messages_data.append({
-                    "id": str(msg.id),
+                    "id": msg.id,
                     "sender_id": msg.sender_id,
                     "text": msg.text,
                     "time": str(msg.sent_at),
-                    "is_deleted": msg.is_deleted,
-                    "edited_at": msg.edited_at if str(msg.edited_at) else None,
+                    "isDeleted": msg.is_deleted,
+                    "editedAt": str(msg.edited_at) if msg.edited_at else None,
 
-                    "fromMe": user.id == msg.sender_id if True else False
+                    "fromMe": True if user.id == msg.sender_id else False
                 })
             
             data = {
@@ -246,7 +248,7 @@ async def chats_list(request: Request):
                 "title": other_user_username,
                 "lastMessage": {
                     "id": last_message.id,
-                    "from_me": last_message.sender_id == user.id if True else False,
+                    "from_me": True if last_message.sender_id == user.id else False,
                     "text": last_message.text,
                     "time": str(last_message.sent_at)
                 },
@@ -332,40 +334,75 @@ async def websocket_endpoint(websocket: WebSocket):
                         continue
 
                     chat = get_chat_between_users(this_user_id, other_user_id)
-                    print(chat, "CHAT")
+
                     print(chat, "EXISTS?", flush=True)
                     if chat:
-                        # if chat exists between those users    new_message = Message(new_chat.id, this_user, message.get("message"))
 
-                        # chat = get_chat(session, this_user.id, other_user_id)
-                        new_message = Message(chat.id, this_user.id, message.get("message"))
-                        other_user_websocket = connection_manager.active_connections.get(other_user_id)
-                        try:
-                            print(connection_manager.active_connections, "active connctions")
-                            session.add(new_message)
-                            session.commit()
-                            session.refresh(new_message)
-                            # other_user_websocket.send_text("hello new message")
-                            # This sent to the receiver
-                            data = {
-                                "message_obj": new_message.to_dict(),
-                                # "sent_at": str(new_message.sent_at),
-                                # "sender_id": this_user_id,
-                                "sender_username": this_user.username,
-                                "receiver_id": other_user_id,
-                                # "receiver_username": session.query(User).filter_by(id=other_user_id).first().username,
+                        #  IF TYPE OF MESSAGE IS REGULAR MESSAGE
+                        if message["type"] == "message":
 
-                                "is_own_message": False,
+                            new_message = Message(chat.id, this_user.id, message.get("message"))
+                            other_user_websocket = connection_manager.active_connections.get(other_user_id)
+                            try:
+                                print(connection_manager.active_connections, "active connctions")
+                                session.add(new_message)
+                                session.commit()
+                                session.refresh(new_message)
+                                # other_user_websocket.send_text("hello new message")
+                                # This sent to the receiver
+                                data = {
+                                    "message_obj": new_message.to_dict(),
+                                    "type": "message",
+
+                                    # "sent_at": str(new_message.sent_at),
+                                    # "sender_id": this_user_id,
+                                    "sender_username": this_user.username,
+                                    "receiver_id": other_user_id,
+                                    # "receiver_username": session.query(User).filter_by(id=other_user_id).first().username,
+
+                                    "is_own_message": False,
+                                    
+                                }
+
+                                await connection_manager.send_personal_message(data, other_user_websocket)
+                                    
+                                # Send to the sender
+                                data["is_own_message"] = True
+                                await websocket.send_json(data)
+                            except Exception as e:
+                                print(f"Error here: {str(e)}")
+
+
+                        # IF TYPE OF MESSAGE IS EDIT_MESSAGE
+                        elif message["type"] == "edit_message":
+                            message_entity: Message = session.query(Message).filter_by(id=message["messageID"]).first()
+
+                            # if message owner is this user
+                            if message_entity.sender_id == this_user.id:
+                                message_entity.text = message["message"]
                                 
+                                message_entity.edited_at = datetime.now()
+                                session.commit()
+                                session.refresh(message_entity)
+                            else:
+                                print("User does not own this message")
+                            
+                            data = {
+                                "type": "edit_message",
+                                "id": message_entity.id,
+                                "text": message_entity.text,
+                                "edited_at": str(message_entity.edited_at),
                             }
 
-                            await connection_manager.send_personal_message(data, other_user_websocket)
-                                
-                            # Send to the sender
-                            data["is_own_message"] = True
+                            if other_user_websocket:= connection_manager.active_connections.get(other_user.id):
+                                await connection_manager.send_personal_message(data, other_user_websocket)
+
                             await websocket.send_json(data)
-                        except Exception as e:
-                            print(f"Error here: {str(e)}")
+
+                            
+                            
+                            
+
 
                     else:
                         # if chat NOT exists between those users, then we create it
@@ -390,6 +427,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                             data = {
                                 "message_obj": new_message.to_dict(),
+                                "type": "message",
                                 # "sent_at": str(new_message.sent_at),
                                 # "sender_id": this_user_id,
                                 "sender_username": this_user.username,
