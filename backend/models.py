@@ -62,9 +62,18 @@ class Message(Base):
     chat_id = Column(Integer, ForeignKey("chat.id"), nullable=False)
     sender_id = Column(Integer, ForeignKey("user.id"), nullable=False)
     sent_at = Column(DateTime, default=func.now())
-    text = Column(String(4096), nullable=False)
+    text = Column(String(4096), nullable=True)
     is_deleted = Column(Boolean, default=False)
     edited_at = Column(DateTime, default=None)
+
+    # Тип сообщения: "text" | "file"
+    message_type = Column(String, default="text")
+
+    # Файловые поля
+    file_url = Column(String, nullable=True, default=None)   # путь к файлу (например, /uploads/file.pdf)
+    file_name = Column(String, nullable=True, default=None)  # оригинальное имя
+    file_type = Column(String, nullable=True, default=None)  # MIME-тип, например image/png
+    file_size = Column(Integer, nullable=True, default=None) # размер в байтах (опционально)
 
     def __init__(self, chat_id, sender_id, text):
         self.chat_id = chat_id
@@ -74,6 +83,7 @@ class Message(Base):
     def to_dict(self) -> dict:
         return {
             "id":           self.id,
+            "type":         self.message_type,
             "chat_id":      self.chat_id,
             "sender_id":    self.sender_id,
             "sent_at":      str(self.sent_at),

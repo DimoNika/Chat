@@ -10,6 +10,7 @@ services:
       - "8080:8080"
     volumes:
       - ./backend:/app
+      - ./uploads:/app/uploads 
     networks:
       - net
     # environment:
@@ -25,6 +26,7 @@ services:
       # - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
       - ./frontend/dist:/frontend:ro   # if serving static files
+      - ./uploads:/uploads
     depends_on:
       - backend
     networks:
@@ -49,6 +51,7 @@ services:
 
 volumes:
   db_data:
+  uploads:   
 
 networks:
   net:

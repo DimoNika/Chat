@@ -1,7 +1,7 @@
 from models import User, Message, Chat
 
 from src.token_managment import create_refresh_token, create_access_token, auth, decode
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, UploadFile, Form
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 
@@ -17,11 +17,18 @@ from src.db_requests import get_chat_between_users
 
 from datetime import datetime
 
+import os
+
+from uuid import uuid4
 engine = create_engine(f"postgresql+psycopg2://myuser:mypassword@db/mydatabase", echo=True)
 # Session = sessionmaker(engine)
 # session = Session()
 
 app = FastAPI()
+
+
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 class ConnectionManager:
     def __init__(self):
@@ -204,6 +211,72 @@ async def find_user(request: Request):
             # return await request.json()
 
 
+@app.post("/upload")
+async def upload_files(request: Request, files: list[UploadFile] = File(...), selectedUserId: str = Form(...)):
+    with Session(engine) as session:
+
+        file_urls = []        
+        user = session.query(User).filter_by(username=request.state.user).first()
+        
+        # data = await request.json() 
+        # return selectedUserId
+        
+        try:
+            for file in files:
+                sys_filename = str(uuid4()) + file.filename
+                file_path = os.path.join(UPLOAD_DIR, sys_filename)
+
+                with open(file_path, "wb") as f:
+                    f.write(await file.read())
+
+                new_message = Message(chat_id=int(selectedUserId), sender_id=user.id, text="")
+                new_message.message_type = "file"
+
+                new_message.file_size = file.size  # bytes
+                new_message.file_name = file.filename
+                new_message.file_type = file.content_type
+                new_message.file_url = sys_filename
+                chat = get_chat_between_users(user.id, int(selectedUserId))
+
+                new_message.chat_id = chat.id
+
+                session.add(new_message)
+                session.commit()
+                session.refresh(new_message)
+                this_user_websocket = connection_manager.active_connections.get(user.id)
+                other_user_websocket = connection_manager.active_connections.get(int(selectedUserId))
+
+                data = {
+                    "message_obj": new_message.to_dict(),
+                    "type": "message",
+                    "file_size": new_message.file_size,
+                    "file_name": new_message.file_name,
+                    "file_type":  new_message.file_type,
+                    "file_url":  new_message.file_url,
+                    
+                    "sender_username": user.username,
+                    "receiver_id": int(selectedUserId),
+                    # "receiver_username": session.query(User).filter_by(id=other_user_id).first().username,
+
+                    "is_own_message": False,
+                }
+                
+                await connection_manager.send_personal_message(data, other_user_websocket)
+                
+                data["is_own_message"] = True
+                await connection_manager.send_personal_message(data, this_user_websocket)
+                
+
+
+
+                
+
+            return JSONResponse(content={"files": file_urls})
+        except Exception as e:
+            print(f"Error: in uploading files {str(e)}")
+
+
+
 @app.get("/chats-list")
 async def chats_list(request: Request):
 
@@ -232,25 +305,45 @@ async def chats_list(request: Request):
             
             messages_data = []
             for msg in session.query(Message).filter(Message.chat_id == chat.id).filter(Message.is_deleted == False).order_by(Message.sent_at.asc()).all():
-                messages_data.append({
-                    "id": msg.id,
-                    "sender_id": msg.sender_id,
-                    "text": msg.text,
-                    "time": str(msg.sent_at),
-                    "isDeleted": msg.is_deleted,
-                    "editedAt": str(msg.edited_at) if msg.edited_at else "",
+                # print(msg.)
+                if msg.message_type == "text":
+                    messages_data.append({
+                        "id": msg.id,
+                        "type": "text",
+                        "sender_id": msg.sender_id,
+                        "text": msg.text,
+                        "time": str(msg.sent_at),
+                        "isDeleted": msg.is_deleted,
+                        "editedAt": str(msg.edited_at) if msg.edited_at else "",
 
-                    "fromMe": True if user.id == msg.sender_id else False
-                })
-            
+                        "fromMe": True if user.id == msg.sender_id else False
+                    })
+                elif msg.message_type == "file":
+                    messages_data.append({
+                        "id": msg.id,
+                        "type": "file",
+                        "sender_id": msg.sender_id,
+                        "text": msg.text,
+                        "time": str(msg.sent_at),
+                        "isDeleted": msg.is_deleted,
+                        "editedAt": str(msg.edited_at) if msg.edited_at else "",
+
+                        "fromMe": True if user.id == msg.sender_id else False,
+                        "file_size": msg.file_size,
+                        "file_name": msg.file_name,
+                        "file_type":  msg.file_type,
+                        "file_url":  msg.file_url,
+                    })
+                    
             data = {
                 "id": other_user_id,
                 "title": other_user_username,
                 "lastMessage": {
-                    "id": last_message.id,
-                    "fromMe": True if last_message.sender_id == user.id else False,
-                    "text": last_message.text,
-                    "time": str(last_message.sent_at)
+                    "id": last_message.id if last_message else 0,
+                    "type": last_message.message_type if last_message else "text",
+                    "fromMe": last_message.sender_id == user.id if last_message else False,
+                    "text": last_message.text if last_message else "",
+                    "time": str(last_message.sent_at) if last_message else ""
                 },
                 "unread": 1,
                 "messages": messages_data
