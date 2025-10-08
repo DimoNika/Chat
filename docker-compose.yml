@@ -29,8 +29,8 @@ services:
       - ./uploads:/uploads
 
       # certificates
-      - ./nginx/cert.pem:/etc/letsencrypt/cert.pem
-      - ./nginx/cert-key.pem:/etc/letsencrypt/cert-key.pem
+      - ./nginx/fullchain.pem:/etc/letsencrypt/fullchain.pem
+      - ./nginx/privkey.pem:/etc/letsencrypt/privkey.pem
 #     ssl_certificate /etc/letsencrypt/localhost.pem;
 #     ssl_certificate_key /etc/letsencrypt/localhost-key.pem;
     depends_on:
