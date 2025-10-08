@@ -66,14 +66,14 @@ class Message(Base):
     is_deleted = Column(Boolean, default=False)
     edited_at = Column(DateTime, default=None)
 
-    # Тип сообщения: "text" | "file"
+    # Message type: "text" | "file"
     message_type = Column(String, default="text")
 
-    # Файловые поля
-    file_url = Column(String, nullable=True, default=None)   # путь к файлу (например, /uploads/file.pdf)
-    file_name = Column(String, nullable=True, default=None)  # оригинальное имя
-    file_type = Column(String, nullable=True, default=None)  # MIME-тип, например image/png
-    file_size = Column(Integer, nullable=True, default=None) # размер в байтах (опционально)
+    # File
+    file_url = Column(String, nullable=True, default=None)   # path /uploads/file.pdf
+    file_name = Column(String, nullable=True, default=None)  # filename
+    file_type = Column(String, nullable=True, default=None)  # file type .pdf
+    file_size = Column(Integer, nullable=True, default=None) # size in bytes
 
     def __init__(self, chat_id, sender_id, text):
         self.chat_id = chat_id
@@ -91,38 +91,3 @@ class Message(Base):
             "is_deleted":   self.is_deleted,
             "edited_at":    str(self.edited_at) if self.edited_at else "",
         }
-
-
-
-# class RefreshToken(Base):
-#     __tablename__ = "refresh_token"
-#     id = Column(Integer, primary_key=True)
-#     token = Column(String(4096), nullable=False)
-
-#     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
-#     user = relationship("User", back_populates="refresh_tokens")
-
-#     def __init__(self, token=token, user_id=user_id):
-#         self.token = token
-#         self.user_id = user_id
-
-#     def __repr__(self):
-#         return f"Belongs to user: {self.user}"
-
-
-# class ChatParticipant(Base):
-#     __tablename__ = "chat_participant"
-#     id = Column(Integer, primary_key=True)
-
-#     chat_id = Column(Integer, ForeignKey("chat.id"), nullable=False)  # chat
-#     chat = relationship("Chat", back_populates="participants")
-
-#     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)  # user
-#     user = relationship("User", back_populates="chat_list")
-
-#     joined_at = Column(DateTime, default=func.now())
-    
-#     def __init__(self, chat_id=chat_id, user_id=user_id):
-#         self.chat_id = chat_id
-#         self.user_id = user_id
-

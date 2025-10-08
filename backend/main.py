@@ -34,7 +34,6 @@ postgre_password = os.getenv("POSTGRES_PASSWORD")
 postgres_db = os.getenv("POSTGRES_DB")
 
 engine = create_engine(f"postgresql+psycopg2://{postgre_user}:{postgre_password}@db/{postgres_db}", echo=True)
-# engine = create_engine(f"postgresql+psycopg2://myuser:mypassword@db/mydatabase", echo=True)
 
 app = FastAPI()
 
@@ -43,15 +42,13 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 class ConnectionManager:
+    """This manager stores all websockets that connected"""
     def __init__(self):
         self.active_connections: dict[int, WebSocket] = {}
 
     def add(self, user_id, websocket: WebSocket):
         self.active_connections.update({user_id: websocket})
 
-    # def disconnect(self, websocket: WebSocket):
-    #     # ???
-    #     self.active_connections.pop(websocket)
 
     async def send_personal_message(self, message: dict, websocket: WebSocket):
         try:
@@ -61,46 +58,42 @@ class ConnectionManager:
             pass
         except Exception as e:
             print(f"Un expected ERROR in ConnectionManager.send_personal_message(): {str(e)}")
-            
-# from src.token_managment import SECRET_KEY
+
+connection_manager = ConnectionManager()
+
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    # print(SECRET_KEY, "SECRET_KEY")
-    # Игнорируем авторизацию для публичных роутов
+    """Middleware authorizes users on protected endpoints"""
+
     if request.url.path in ["/login", "/signup", "/test" , "/refresh"]:
         return await call_next(request)
 
     auth_header = request.headers.get("Authorization")
-    # print(request.headers)
+    
     if not auth_header or not auth_header.startswith("Bearer "):
         return JSONResponse(status_code=401, content={"detail": "Missing token"})
 
     token = auth_header.split(" ")[1]
-    # print(token)
-    # print(auth(token))
-
+    
     if not auth(token):
         return JSONResponse(status_code=401, content={"detail": "Invalid token"})
     payload = decode(token)
-    print(payload)
-    # Сохраняем пользователя в request.state
-    request.state.user = payload["username"]  # например, user_id
+    
+    # Save user to state obj to pass it
+    request.state.user = payload["username"]
 
     response = await call_next(request)
     return response
 
 
-@app.get("/test")
-async def main():
-    return "hello world hehe"
-
-
 @app.post("/login")
 async def login(request: Request):
+    """Public endpoint for logging in users"""
     body = await request.json()
-    # print(body)
+    
     user_creds = UserLogin(**body)  # Serialize manulally
-    # print(user)
+    
 
     with Session(engine) as session:
 
@@ -123,44 +116,32 @@ async def login(request: Request):
                 return response
             
         return JSONResponse(status_code=404, content={"detail": "Invalid credentials"})
-    
-
-    
-    
-    
 
 
 @app.post("/signup")
 async def signup(request: Request):
+    """Public endpoint for singing up users"""
 
     try:
         body = await request.json()
-        # print(body)
+        
         user = UserSignup(**body)  # Serialize manulally
-        # print(user)
-        # print("hello world")
-    
+        
     except ValidationError as validation_error:
         validation_error : ValidationError
-        # print(validation_error)
-        # print(str(validation_error) + "ALO")
-        # print(validation_error.title)
         
         for err in validation_error.errors():
             if err['loc'][0] == "username":
                 return JSONResponse(status_code=422, content={"detail": "Wrong username."})
             elif err['loc'][0] == "password1":
-                print(err)
-                print(err["ctx"]["error"])
-                
                 return JSONResponse(status_code=422, content={"detail": str(err["ctx"]["error"])})
-                # return JSONResponse(status_code=422, content={"detail": "Password pattern missmatch."})
-            
+        
+    # Check if passwords are same
     if user.password1 != user.password2:    
         return JSONResponse(status_code=400, content={"detail": "Passwords do not match"})
-    with Session(engine) as session:
     
-
+    with Session(engine) as session:
+        # Check if username taken
         if session.query(User).where(User.user_tag == user.username.lower()).first():
             return JSONResponse(status_code=409, content={"detail": "Username already taken"})
         else:
@@ -186,10 +167,12 @@ async def signup(request: Request):
 
         return response
 
+
 @app.get("/auth")
 async def auth_endpoint():
     """
-    User enters here if only he has valid access_token
+    User enters here if only he has valid access_token.
+    Protected endpoint.
     """
     return JSONResponse(content={"detail": "User authenticated", "auth": True})
 
@@ -199,7 +182,6 @@ async def refresh_endpoint(request: Request):
     Refreshes access_token if refresh_token valid
     """
 
-    # print(request.cookies)
     if auth(refresh_token := request.cookies["refresh_token"]):
         refresh_token_data = decode(refresh_token)
         new_access_token = create_access_token({"username": refresh_token_data["username"], "user_id": refresh_token_data["user_id"]})
@@ -209,30 +191,32 @@ async def refresh_endpoint(request: Request):
 
 @app.post("/find-user")
 async def find_user(request: Request):
+    """Protected endpoint for finding users for chatting"""
     data = await request.json() 
-    print(await request.json())
-    # TODO: check if users alredy have chat
+        
     with Session(engine) as session:
 
-        if user:= session.query(User).where(User.user_tag==data["username"].lower()).first():
+        if other_user:= session.query(User).where(User.user_tag==data["username"].lower()).first():
+            this_user = session.query(User).filter_by(username=request.state.user).first()
+
+            if get_chat_between_users(this_user.id, other_user.id):
+                return JSONResponse(content={'detail': "Users have chat alredy"}, status_code=404)
+
             return JSONResponse(content={
-                "user_id": user.id,
-                'username': user.username,
+                "user_id": other_user.id,
+                'username': other_user.username,
                 })
         else:
             return JSONResponse(content={'detail': "User not found"}, status_code=404)
-            # return await request.json()
 
 
 @app.post("/upload")
 async def upload_files(request: Request, files: list[UploadFile] = File(...), selectedUserId: str = Form(...)):
+    """Protected endpoint for uploading files"""
     with Session(engine) as session:
 
         file_urls = []        
         user = session.query(User).filter_by(username=request.state.user).first()
-        
-        # data = await request.json() 
-        # return selectedUserId
         
         try:
             for file in files:
@@ -269,7 +253,6 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), se
                     
                     "sender_username": user.username,
                     "receiver_id": int(selectedUserId),
-                    # "receiver_username": session.query(User).filter_by(id=other_user_id).first().username,
 
                     "is_own_message": False,
                 }
@@ -279,19 +262,14 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), se
                 data["is_own_message"] = True
                 await connection_manager.send_personal_message(data, this_user_websocket)
                 
-
-
-
-                
-
             return JSONResponse(content={"files": file_urls})
         except Exception as e:
             print(f"Error: in uploading files {str(e)}")
 
 
-
 @app.get("/chats-list")
 async def chats_list(request: Request):
+    """Protected endpoing to fetch all users exiting chats and messages"""
 
     with Session(engine) as session:
         user = session.query(User).filter_by(username=request.state.user).first()
@@ -299,14 +277,14 @@ async def chats_list(request: Request):
         response_data = []
 
         for chat in user.chats:
-            # print(chat, "hello w")
+            
             other_user_username = ''
             for chatter in chat.users:
                 chatter: User
                 if chatter.username != user.username:
                     other_user_username = chatter.username
                     other_user_id = chatter.id
-            # Последнее сообщение по дате
+            # Last message by sent_at
             last_message = (
                 session.query(Message)
                 .filter(Message.chat_id == chat.id)
@@ -318,7 +296,7 @@ async def chats_list(request: Request):
             
             messages_data = []
             for msg in session.query(Message).filter(Message.chat_id == chat.id).filter(Message.is_deleted == False).order_by(Message.sent_at.asc()).all():
-                # print(msg.)
+                
                 if msg.message_type == "text":
                     messages_data.append({
                         "id": msg.id,
@@ -367,38 +345,23 @@ async def chats_list(request: Request):
             return chat["lastMessage"]["time"]
 
         response_data.sort(key=by_time, reverse=True)
-        # return "hello"
+        
         return JSONResponse(content={"chats_list": response_data, "your_username": user.username})
 
-# type Message = {
-#   id: string;
-#   fromMe: boolean;
-#   text: string;
-#   time: string; // ISO or formatted
-# };
-
-# type Chat = {
-#   id: string;
-#   title: string;
-#   lastMessage: string;
-#   unread?: number;
-#   messages: Message[];
-# };
 
 
-connection_manager = ConnectionManager()
 
 @app.websocket("/chat")
 async def websocket_endpoint(websocket: WebSocket):
     """
     When client opens conncection it sends json with access_token,
     then server authenticates it.
-    If Authnticated
 
-    If not Authnticated closes connection
+    If Authenticated receives messages and sends to chatters
+
+    If not Authenticated closes connection
     """
     await websocket.accept()
-    # await websocket.send_json({"info": "You connected to the server"})
 
     # Authenticate connection
     data: dict= await websocket.receive_json()
@@ -410,40 +373,28 @@ async def websocket_endpoint(websocket: WebSocket):
     this_user_id = token_data.get("user_id")
     with Session(engine) as session:
         try:
+            # Authenticate
             if auth(token):
-                # await websocket.send_json({"detail": "You are authenticated"})
                 connection_manager.add(token_data["user_id"], websocket)
 
                 while True:
                     # receiveing message
                     message: dict = await websocket.receive_json()
                     other_user_id = message["selectedUserId"]
-                    print("hello world")
-                    print(message)
-                    print(other_user_id, type(other_user_id))
+                    
                     
                     stmt = select(User).where(User.id == other_user_id)
                     other_user = session.execute(stmt).scalars().first()
-                    print(other_user)
 
                     this_user: User = session.query(User).filter_by(id=this_user_id).first()
-                    # other_user = session.query(User).where(User.id==other_user_id).first()
-                    # message = {
-                    #       selectedUserId: str
-                    #       message: str
-                    # }
-
-
+                    
+                    # If adresat dont exist
                     if not other_user:
-                        # await websocket.send_json({"error": "User not found"})
-                        print(other_user, "OTHER USER DONT EXIST")
                         continue
 
                     chat = get_chat_between_users(this_user_id, other_user_id)
-
-                    print(chat, "EXISTS?", flush=True)
+                    
                     if chat:
-
                         #  IF TYPE OF MESSAGE IS REGULAR MESSAGE
                         if message["type"] == "message":
 
@@ -454,30 +405,23 @@ async def websocket_endpoint(websocket: WebSocket):
                                 session.add(new_message)
                                 session.commit()
                                 session.refresh(new_message)
-                                # other_user_websocket.send_text("hello new message")
-                                # This sent to the receiver
+                            
                                 data = {
                                     "message_obj": new_message.to_dict(),
                                     "type": "message",
-
-                                    # "sent_at": str(new_message.sent_at),
-                                    # "sender_id": this_user_id,
                                     "sender_username": this_user.username,
                                     "receiver_id": other_user_id,
-                                    # "receiver_username": session.query(User).filter_by(id=other_user_id).first().username,
 
                                     "is_own_message": False,
-                                    
                                 }
 
-                                await connection_manager.send_personal_message(data, other_user_websocket)
-                                    
+                                # This sent to the receiver
+                                await connection_manager.send_personal_message(data, other_user_websocket)    
                                 # Send to the sender
                                 data["is_own_message"] = True
                                 await websocket.send_json(data)
                             except Exception as e:
                                 print(f"Error here: {str(e)}")
-
 
                         # IF TYPE OF MESSAGE IS EDIT_MESSAGE
                         elif message["type"] == "edit_message":
@@ -500,18 +444,19 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "edited_at": str(message_entity.edited_at),
                             }
 
+                            # This sent to the receiver
                             if other_user_websocket:= connection_manager.active_connections.get(other_user.id):
                                 await connection_manager.send_personal_message(data, other_user_websocket)
 
+                            # Send to the sender
                             await websocket.send_json(data)
                         
+                        # IF TYPE OF MESSAGE IS DELETE_MESSAGE
                         elif message["type"] == "delete_message":
                             message_entity: Message = session.query(Message).filter_by(id=message["messageID"]).first()
 
                             # if message owner is this user
                             if message_entity.sender_id == this_user.id:
-                                
-                                
                                 message_entity.is_deleted = True
                                 session.commit()
                                 session.refresh(message_entity)
@@ -528,18 +473,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
                             await websocket.send_json(data)
 
-                            
-                            
-                            
-
-
                     else:
                         # if chat NOT exists between those users, then we create it
                         try:
 
                             new_chat = Chat()
                             
-                            print("usrs", this_user,  other_user)
                             new_chat.users = [this_user, other_user]
                         
                             session.add(new_chat)
@@ -557,24 +496,20 @@ async def websocket_endpoint(websocket: WebSocket):
                             data = {
                                 "message_obj": new_message.to_dict(),
                                 "type": "message",
-                                # "sent_at": str(new_message.sent_at),
-                                # "sender_id": this_user_id,
                                 "sender_username": this_user.username,
                                 "receiver_id": other_user_id,
-                                # "receiver_username": session.query(User).filter_by(id=other_user_id).first().username,
 
                                 "is_own_message": False,
                                 
                             }
+
                             # send other user message
                             if other_user_websocket:= connection_manager.active_connections.get(other_user.id):
                                 await connection_manager.send_personal_message(data, other_user_websocket)
 
                             data["is_own_message"] = True
+                            # send to sender user message
                             await websocket.send_json(data)
-
-                            
-                            # print(this_user.chat_list)
 
                         except Exception as e:
                             print(f"Exception in creating new chat: {e}")
@@ -582,132 +517,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     
         except WebSocketDisconnect as e:
-            # delete this websocket from pool
             print(f"User disconnected")
 
         except Exception as e:
             print(f"Error: Unknow exception occured in chat-service /ws endpoint: {str(e)}")
         
         else:
-            # await websocket.send_text(f"You NOT authenticated")
             websocket.close()
-
-
-    #     try:
-    #         # await websocket.send_text(f"You authenticated")
-    #         access_token = decode(data.get("access_token"))
-    #         await manager.add(access_token.get("user_id"), websocket)  # User Authenticated and added to the all connection dict
-    #         # await websocket.send_text(f"All connections: {manager.active_connections}")
-    #         this_user_id = access_token.get("user_id")
-            
-    #         while True:
-    #             print("loop started", flush=True)
-    #             message: dict = await websocket.receive_json()
-    #             other_user_id = message["selectedUserId"]
-
-    #             with sessionLocal() as session:
-    #                 session: Session
-
-    #                 this_user: User = session.query(User).filter_by(id=this_user_id).first()
-    #                 other_user = session.query(User).filter_by(id=other_user_id).first()
-    #                 """
-    #                 Check if this users have chat:
-    #                     1. Take list of chat participants of this_user
-    #                     2. Iterate throug list and chat all chat if those chats have other_user as participant
-    #                 """
-    #                 chat_exists = check_for_chat(session, this_user_id, other_user_id)
-    #                 print(chat_exists, "EXISTS?")
-    #                 if chat_exists:
-    #                     # if chat exists between those users    new_message = Message(new_chat.id, this_user, message.get("message"))
-
-    #                     chat = get_chat(session, this_user.id, other_user_id)
-    #                     new_message = Message(chat.id, this_user.id, message.get("message"))
-    #                     other_user_websocket = manager.active_connections.get(other_user_id)
-    #                     try:
-    #                         print(manager.active_connections, "active connctions")
-    #                         session.add(new_message)
-    #                         session.commit()
-    #                         session.refresh(new_message)
-    #                         # other_user_websocket.send_text("hello new message")
-    #                         # This sent to the receiver
-    #                         data = {
-    #                             "message_obj": new_message.to_dict(),
-    #                             "sent_at": str(new_message.sent_at),
-    #                             "sender_id": this_user_id,
-    #                             "sender_username": this_user.username,
-    #                             "receiver_id": other_user_id,
-    #                             "receiver_username": session.query(User).filter_by(id=other_user_id).first().username,
-    #                         }
-    #                         await manager.send_personal_message(data, manager.active_connections.get(other_user_id))
-    #                         # {
-    #                         #     "info": "message sent",
-    #                         #     "message_obj": new_message.to_dict(),
-    #                         #     # "is_own_message": True,
-    #                         #     "sender_id": this_user.id,
-    #                         #     "receiver_id": other_user_id,
-    #                         #     "receiver_username": session.query(User).filter_by(id=other_user_id).first().username,
-
-    #                         #     "data": str(manager.active_connections)
-    #                         # } 
-    #                         # This sent to the sender
-    #                         await websocket.send_json(data)
-    #                     except Exception as e:
-    #                         print(f"Error here: {str(e)}")
-
-    #                 else:
-    #                     # if chat NOT exists between those users, then we create itr
-    #                     try:
-    #                         new_chat = Chat()
-                        
-    #                         session.add(new_chat)
-    #                         session.commit()
-    #                         session.refresh(new_chat)
-
-    #                         this_user_CP = ChatParticipant(chat_id=new_chat.id, user_id=this_user.id)
-    #                         other_user_CP = ChatParticipant(chat_id=new_chat.id, user_id=other_user.id)
-
-    #                         session.add(this_user_CP)
-    #                         session.add(other_user_CP)
-                            
-    #                         session.commit()
-
-    #                         # Chat created, then send message itself
-    #                         new_message = Message(new_chat.id, this_user.id, message.get("message"))
-                            
-    #                         session.add(new_message)
-    #                         session.commit()
-    #                         session.refresh(new_message)
-
-    #                         data = {
-    #                             "message_obj": new_message.to_dict(),
-    #                             "sent_at": str(new_message.sent_at),
-    #                             "sender_id": this_user_id,
-    #                             "sender_username": this_user.username,
-    #                             "receiver_id": other_user_id,
-    #                             "receiver_username": session.query(User).filter_by(id=other_user_id).first().username,
-    #                         }
-    #                         await manager.send_personal_message(data, manager.active_connections.get(other_user_id))
-    #                         # await manager.send_personal_message(data, manager.active_connections.get(this_user_id))
-    #                         await websocket.send_json(data)
-
-
-
-    #                         # print(this_user.chat_list)
-
-    #                     except Exception as e:
-    #                         print(f"Exeprion in creatin new chat: {e}")
-
-
-
-
-                   
-    #     except WebSocketDisconnect as e:
-    #         # delete this websocket from pool
-    #         websocket.close()
-    #         manager.disconnect(websocket)
-    #     except Exception as e:
-    #         print(f"Error: Unknow exception occured in chat-service /ws endpoint: {str(e)}")
-    
-    # else:
-    #     await websocket.send_text(f"You NOT authenticated")
-    #     websocket.close()
