@@ -7,10 +7,10 @@ from dotenv import load_dotenv
 import os
 from pathlib import Path
 
-env_path = Path(__file__).resolve().parent.parent / "shared" / ".env"
+env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(env_path)
-# SECRET_KEY = os.getenv("SECRET_KEY")
-SECRET_KEY = "SECRET_KEYSECRET_KEYSECRET_KEYSECRET_KEYSECRET_KEY"
+
+SECRET_KEY = os.getenv("SECRET_KEY")
 
 
 

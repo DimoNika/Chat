@@ -28,6 +28,28 @@ target_metadata = Base.metadata
 # ... etc.
 
 
+from dotenv import load_dotenv
+import os
+from pathlib import Path
+
+env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(env_path)
+# Get DB info from environment
+POSTGRES_DB = os.getenv("POSTGRES_DB")
+POSTGRES_USER = os.getenv("POSTGRES_USER")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+
+# Build the SQLAlchemy URL
+SQLALCHEMY_DATABASE_URL = (
+    f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@localhost/{POSTGRES_DB}"
+)
+print(SQLALCHEMY_DATABASE_URL)
+# postgresql+psycopg2://user:pass@localhost/db
+
+# Set the URL dynamically
+config = context.config
+config.set_main_option("sqlalchemy.url", SQLALCHEMY_DATABASE_URL)
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 

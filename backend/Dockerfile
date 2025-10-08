@@ -20,5 +20,5 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 EXPOSE 8080
 
 # Command to run the app with Uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
+CMD ["uvicorn", "main:app", "--host", "localhost", "--port", "8080", "--reload"]
 # CMD ["python3", "main.py"]

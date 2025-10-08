@@ -20,9 +20,21 @@ from datetime import datetime
 import os
 
 from uuid import uuid4
-engine = create_engine(f"postgresql+psycopg2://myuser:mypassword@db/mydatabase", echo=True)
-# Session = sessionmaker(engine)
-# session = Session()
+
+from pathlib import Path
+from dotenv import load_dotenv
+
+
+env_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(env_path)
+
+# environment variables block
+postgre_user = os.getenv("POSTGRES_USER")
+postgre_password = os.getenv("POSTGRES_PASSWORD")
+postgres_db = os.getenv("POSTGRES_DB")
+
+engine = create_engine(f"postgresql+psycopg2://{postgre_user}:{postgre_password}@db/{postgres_db}", echo=True)
+# engine = create_engine(f"postgresql+psycopg2://myuser:mypassword@db/mydatabase", echo=True)
 
 app = FastAPI()
 
@@ -50,9 +62,10 @@ class ConnectionManager:
         except Exception as e:
             print(f"Un expected ERROR in ConnectionManager.send_personal_message(): {str(e)}")
             
-
+# from src.token_managment import SECRET_KEY
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
+    # print(SECRET_KEY, "SECRET_KEY")
     # Игнорируем авторизацию для публичных роутов
     if request.url.path in ["/login", "/signup", "/test" , "/refresh"]:
         return await call_next(request)

@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     # container_name: fastapi_app
     ports:
-      - "8080:8080"
+      - 8080
     volumes:
       - ./backend:/app
       - ./uploads:/app/uploads 
